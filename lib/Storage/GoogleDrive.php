@@ -4,6 +4,7 @@ namespace OCA\Files_external_gdrive_v2\Storage;
 use OC\Files\Storage\Common;
 
 class DirWrapper {
+    public $context;
     private static $dirs = [];
     private $index = 0;
     private $id;
@@ -96,7 +97,9 @@ class GoogleDrive extends Common {
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         $response = curl_exec($ch);
-        curl_close($ch);
+        if (is_resource($ch)) {
+            curl_close($ch);
+        }
         
         if ($response !== false) {
             $newData = json_decode($response, true);
@@ -138,7 +141,9 @@ class GoogleDrive extends Common {
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        if (is_resource($ch)) {
+            curl_close($ch);
+        }
 
         if ($httpCode === 401 && $retry) {
             if ($this->refreshToken()) return $this->apiRequest($endpoint, $method, $params, $body, false);
@@ -246,5 +251,5 @@ class GoogleDrive extends Common {
     public function mkdir(string $path): bool { return false; }
     public function rmdir(string $path): bool { return false; }
     public function unlink(string $path): bool { return false; }
-    public function touch(string $path, int $mtime = null): bool { return false; }
+    public function touch(string $path, ?int $mtime = null): bool { return false; }
 }

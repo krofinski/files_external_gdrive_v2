@@ -11,8 +11,8 @@
     <types>
         <filesystem/>
     </types>
-    <category>files</category>
     <dependencies>
         <nextcloud min-version="33" max-version="34" />
     </dependencies>
+    <category>files</category>
 </info>
