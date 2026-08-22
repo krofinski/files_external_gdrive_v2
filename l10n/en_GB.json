@@ -1,0 +1,21 @@
+{
+  "translations": {
+    "Google Drive App Configuration": "Google Drive App Configuration",
+    "Error verifying OAuth2 Code for ": "Error verifying OAuth2 Code for ",
+    "Google Drive": "Google Drive",
+    "Step 1 failed. Exception: %s": "Step 1 failed. Exception: %s",
+    "Step 2 failed. Exception: %s": "Step 2 failed. Exception: %s",
+    "🔑 Connect with Google & Get Token": "🔑 Connect with Google & Get Token",
+    "Please enter Client ID and Secret first!": "Please enter Client ID and Secret first!",
+    "⌛ Waiting for Google...": "⌛ Waiting for Google...",
+    "Server Error: 404 or 500. Check F12 Console!": "Server Error: 404 or 500. Check F12 Console!",
+    "❌ Error": "❌ Error",
+    "🔄 Generating token...": "🔄 Generating token...",
+    "✅ Success! Please click Create!": "✅ Success! Please click Create!",
+    "Error: Google denied the token!": "Error: Google denied the token!",
+    "❌ Cancelled. Try again?": "❌ Cancelled. Try again?",
+    "Unknown Server Error": "Unknown Server Error",
+    "❌ Network Error": "❌ Network Error"
+  },
+  "pluralForm": "nplurals=2; plural=(n != 1);"
+}
