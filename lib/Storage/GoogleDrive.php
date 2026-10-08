@@ -3,6 +3,40 @@ namespace OCA\Files_external_gdrive_v2\Storage;
 
 use OC\Files\Storage\Common;
 
+class FileWriteWrapper {
+    public $context;
+    private $tempFile;
+    private $path;
+    private $storage;
+
+    public function stream_open($path, $mode, $options, &$opened_path) {
+        $opts = stream_context_get_options($this->context);
+        $this->storage = $opts['gdrive']['storage'] ?? null;
+        $this->path = $opts['gdrive']['path'] ?? null;
+        if (!$this->storage) return false;
+        
+        $this->tempFile = tmpfile();
+        return true;
+    }
+
+    public function stream_write($data) {
+        return fwrite($this->tempFile, $data);
+    }
+
+    public function stream_close() {
+        fflush($this->tempFile);
+        fseek($this->tempFile, 0);
+        $data = stream_get_contents($this->tempFile);
+        fclose($this->tempFile);
+        $this->storage->uploadFile($this->path, $data);
+    }
+    
+    public function stream_tell() { return ftell($this->tempFile); }
+    public function stream_seek($offset, $whence) { return fseek($this->tempFile, $offset, $whence) === 0; }
+    public function stream_eof() { return feof($this->tempFile); }
+    public function stream_stat() { return fstat($this->tempFile); }
+}
+
 class DirWrapper {
     public $context;
     private static $dirs = [];
@@ -75,9 +109,9 @@ class GoogleDrive extends Common {
     }
 
     public function getId(): string { 
-        return 'gdrive::' . $this->clientId; 
+        return 'gdrive::' . md5($this->clientId . $this->token['access_token'] ?? '');
     }
-    
+
     public function test(bool $isPersonal = false): bool {
         return !empty($this->token['access_token']) || !empty($this->token['refresh_token']);
     }
@@ -100,13 +134,13 @@ class GoogleDrive extends Common {
         if (is_resource($ch)) {
             curl_close($ch);
         }
-        
-        if ($response !== false) {
-            $newData = json_decode($response, true);
-            if (isset($newData['access_token'])) {
-                $this->token['access_token'] = $newData['access_token'];
-                return true;
+        $tokenData = json_decode($response, true);
+        if (isset($tokenData['access_token'])) {
+            $this->token['access_token'] = $tokenData['access_token'];
+            if (isset($tokenData['refresh_token'])) {
+                $this->token['refresh_token'] = $tokenData['refresh_token'];
             }
+            return true;
         }
         return false;
     }
@@ -132,25 +166,20 @@ class GoogleDrive extends Common {
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
         
         if ($body !== null) {
-            if (is_array($body)) {
-                $body = json_encode($body);
-                $headers[] = 'Content-Type: application/json';
-            }
+            $headers[] = 'Content-Type: application/json';
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
         }
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        if (is_resource($ch)) {
-            curl_close($ch);
+        if (is_resource($ch)) curl_close($ch);
+        
+        if ($httpCode === 401 && $retry && $this->refreshToken()) {
+            return $this->apiRequest($endpoint, $method, $params, $body, false);
         }
-
-        if ($httpCode === 401 && $retry) {
-            if ($this->refreshToken()) return $this->apiRequest($endpoint, $method, $params, $body, false);
-        }
-        if ($httpCode >= 400) return false;
-        $decoded = json_decode($response, true);
-        return $decoded !== null ? $decoded : false;
+        
+        return json_decode($response, true);
     }
 
     private function getFileIdByPath(string $path) {
@@ -228,6 +257,65 @@ class GoogleDrive extends Common {
         return DirWrapper::wrap($names);
     }
     
+    public function uploadFile(string $path, string $data) {
+        $parentPath = dirname($path);
+        if ($parentPath === '.') $parentPath = '';
+        $parentId = $this->getFileIdByPath($parentPath);
+        if (!$parentId) return false;
+        
+        $filename = basename($path);
+        $existingId = $this->getFileIdByPath($path);
+        
+        $boundary = '-------' . uniqid();
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        
+        if ($existingId) {
+            $url = 'https://www.googleapis.com/upload/drive/v3/files/' . $existingId . '?uploadType=multipart';
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+            $meta = ['name' => $filename];
+        } else {
+            $url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            curl_setopt($ch, CURLOPT_POST, true);
+            $meta = ['name' => $filename, 'parents' => [$parentId]];
+        }
+        
+        $body = "--$boundary\r\n";
+        $body .= "Content-Type: application/json; charset=UTF-8\r\n\r\n";
+        $body .= json_encode($meta) . "\r\n";
+        $body .= "--$boundary\r\n";
+        $body .= "Content-Type: application/octet-stream\r\n\r\n";
+        $body .= $data . "\r\n";
+        $body .= "--$boundary--\r\n";
+        
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->token['access_token'],
+            'Content-Type: multipart/related; boundary=' . $boundary,
+            'Content-Length: ' . strlen($body)
+        ]);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        
+        $res = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($code >= 200 && $code < 300) {
+            unset($this->idCache[$path]);
+            $this->clearCacheForFolder($parentPath);
+            return true;
+        }
+        return false;
+    }
+
+    private function clearCacheForFolder($path) {
+        unset($this->idCache[$path]);
+        // Also clear children list cache if implemented
+    }
+
     public function filetype(string $path) { $stat = $this->stat($path); return $stat ? $stat['type'] : false; }
     public function file_exists(string $path) { return $this->getFileIdByPath($path) !== false; }
     
@@ -245,11 +333,52 @@ class GoogleDrive extends Common {
             $opts = ['http' => ['method' => 'GET', 'header' => "Authorization: Bearer " . $this->token['access_token'] . "\r\n"]];
             return fopen($url, 'rb', false, stream_context_create($opts));
         }
+        
+        if (strpos($mode, 'w') !== false) {
+            if (!in_array('gdrive-file', stream_get_wrappers(), true)) {
+                stream_wrapper_register('gdrive-file', FileWriteWrapper::class);
+            }
+            $opts = ['gdrive' => ['storage' => $this, 'path' => $path]];
+            return fopen('gdrive-file://temp', $mode, false, stream_context_create($opts));
+        }
+        
         return false;
     }
     
-    public function mkdir(string $path): bool { return false; }
-    public function rmdir(string $path): bool { return false; }
-    public function unlink(string $path): bool { return false; }
-    public function touch(string $path, ?int $mtime = null): bool { return false; }
+    public function mkdir(string $path): bool {
+        $parentPath = dirname($path);
+        if ($parentPath === '.') $parentPath = '';
+        $parentId = $this->getFileIdByPath($parentPath);
+        if (!$parentId) return false;
+        
+        $body = json_encode([
+            'name' => basename($path),
+            'mimeType' => 'application/vnd.google-apps.folder',
+            'parents' => [$parentId]
+        ]);
+        
+        $res = $this->apiRequest('/files', 'POST', [], $body);
+        if (isset($res['id'])) {
+            $this->clearCacheForFolder($parentPath);
+            return true;
+        }
+        return false;
+    }
+    
+    public function rmdir(string $path): bool { return $this->unlink($path); }
+    
+    public function unlink(string $path): bool {
+        $id = $this->getFileIdByPath($path);
+        if (!$id) return false;
+        
+        $res = $this->apiRequest('/files/' . $id, 'DELETE');
+        $this->clearCacheForFolder(dirname($path));
+        unset($this->idCache[$path]);
+        return true; 
+    }
+    
+    public function touch(string $path, ?int $mtime = null): bool {
+        if ($this->file_exists($path)) return true;
+        return $this->uploadFile($path, '');
+    }
 }
