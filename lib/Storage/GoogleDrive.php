@@ -342,9 +342,31 @@ class GoogleDrive extends Common {
     
     public function fopen(string $path, string $mode) {
         $id = $this->getFileIdByPath($path);
+        
         if (strpos($mode, 'r') !== false && $id) {
-            $url = $this->driveApiUrl . '/files/' . $id . '?alt=media';
-            $opts = ['http' => ['method' => 'GET', 'header' => "Authorization: Bearer " . $this->token['access_token'] . "\r\n"]];
+            $mimeRes = $this->apiRequest('/files/' . $id, 'GET', ['fields' => 'mimeType']);
+            if (!$mimeRes) return false;
+            
+            $mime = $mimeRes['mimeType'] ?? '';
+            $url = $this->driveApiUrl . '/files/' . $id;
+            
+            if ($mime === 'application/vnd.google-apps.document') {
+                $url .= '/export?mimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            } elseif ($mime === 'application/vnd.google-apps.spreadsheet') {
+                $url .= '/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            } elseif ($mime === 'application/vnd.google-apps.presentation') {
+                $url .= '/export?mimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            } elseif (strpos($mime, 'application/vnd.google-apps.') === 0) {
+                $url .= '/export?mimeType=application/pdf';
+            } else {
+                $url .= '?alt=media';
+            }
+
+            $opts = ['http' => [
+                'method' => 'GET', 
+                'header' => "Authorization: Bearer " . $this->token['access_token'] . "\r\n",
+                'follow_location' => 1
+            ]];
             return fopen($url, 'rb', false, stream_context_create($opts));
         }
         
