@@ -241,9 +241,23 @@ class GoogleDrive extends Common {
         if ($res === false || !isset($res['files'])) return DirWrapper::wrap([]);
         
         $names = [];
+        $seen = [];
         foreach ($res['files'] as $file) {
-            $names[] = $file['name'];
-            $childPath = empty($path) ? $file['name'] : $path . '/' . $file['name'];
+            $baseName = str_replace('/', '-', $file['name']);
+            if (isset($seen[$baseName])) {
+                $ext = pathinfo($baseName, PATHINFO_EXTENSION);
+                $nameWithoutExt = pathinfo($baseName, PATHINFO_FILENAME);
+                $i = 1;
+                do {
+                    $newName = $nameWithoutExt . " ({$i})" . ($ext ? ".$ext" : '');
+                    $i++;
+                } while (isset($seen[$newName]));
+                $baseName = $newName;
+            }
+            $seen[$baseName] = true;
+            
+            $names[] = $baseName;
+            $childPath = empty($path) ? $baseName : $path . '/' . $baseName;
             $this->idCache[$childPath] = $file['id'];
             $isDir = ($file['mimeType'] === 'application/vnd.google-apps.folder');
             $mtime = strtotime($file['modifiedTime'] ?? 'now');
