@@ -9,9 +9,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         inputs.forEach(input => {
             const text = (input.placeholder || '') + (input.parentElement ? input.parentElement.innerText : '');
-            if (text.includes('Client ID')) clientIdInput = input;
-            if (text.includes('Client Secret')) clientSecretInput = input;
-            if (text.includes('Token')) tokenInput = input;
+            const param = input.dataset.parameter || input.getAttribute('data-parameter') || '';
+            if (text.includes('Client ID') || text.includes('ID de cliente') || param.includes('client_id')) clientIdInput = input;
+            if (text.includes('Client Secret') || text.includes('Secreto de cliente') || param.includes('client_secret')) clientSecretInput = input;
+            if (text.includes('Token') || param.includes('token')) tokenInput = input;
         });
 
         if (clientIdInput && clientSecretInput && tokenInput) {
