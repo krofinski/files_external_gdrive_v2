@@ -271,7 +271,7 @@ class GoogleDrive extends Common {
         return DirWrapper::wrap($names);
     }
     
-    public function uploadFile(string $path, string $data) {
+        public function uploadFile(string $path, string $data) {
         $parentPath = dirname($path);
         if ($parentPath === '.') $parentPath = '';
         $parentId = $this->getFileIdByPath($parentPath);
@@ -340,7 +340,7 @@ class GoogleDrive extends Common {
     public function isDeletable(string $path): bool { return true; }
     public function isSharable(string $path): bool { return true; }
     
-    public function fopen(string $path, string $mode) {
+                public function fopen(string $path, string $mode) {
         $id = $this->getFileIdByPath($path);
         
         if (strpos($mode, 'r') !== false && $id) {
@@ -356,8 +356,13 @@ class GoogleDrive extends Common {
                 $url .= '/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             } elseif ($mime === 'application/vnd.google-apps.presentation') {
                 $url .= '/export?mimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            } elseif (strpos($mime, 'application/vnd.google-apps.') === 0) {
+            } elseif ($mime === 'application/vnd.google-apps.drawing') {
                 $url .= '/export?mimeType=application/pdf';
+            } elseif (strpos($mime, 'application/vnd.google-apps.') === 0) {
+                $tmp = tmpfile();
+                fwrite($tmp, "Este archivo es un formato especial de Google (Ej: Formulario, Acceso directo, Google Site, etc.) con formato: {$mime}\n\nGoogle Drive no permite descargar este tipo de archivos nativos directamente.\nPor favor, abre este archivo directamente desde la interfaz web oficial de Google Drive.");
+                fseek($tmp, 0);
+                return $tmp;
             } else {
                 $url .= '?alt=media';
             }
@@ -365,9 +370,22 @@ class GoogleDrive extends Common {
             $opts = ['http' => [
                 'method' => 'GET', 
                 'header' => "Authorization: Bearer " . $this->token['access_token'] . "\r\n",
-                'follow_location' => 1
+                'follow_location' => 1,
+                'ignore_errors' => true
             ]];
-            return fopen($url, 'rb', false, stream_context_create($opts));
+            
+            // Suppress warnings from fopen so Nextcloud handles the false return cleanly if it fails
+            $handle = @fopen($url, 'rb', false, stream_context_create($opts));
+            
+            // If the export or download fails, fallback to a text file message
+            if ($handle === false) {
+                $tmp = tmpfile();
+                fwrite($tmp, "Error: Google Drive denegó la descarga o exportación de este archivo. Es posible que el archivo esté protegido contra descargas, sea un acceso directo inválido, o el formato no soporte exportación.\nURL intentada: {$url}");
+                fseek($tmp, 0);
+                return $tmp;
+            }
+            
+            return $handle;
         }
         
         if (strpos($mode, 'w') !== false) {
@@ -381,7 +399,7 @@ class GoogleDrive extends Common {
         return false;
     }
     
-    public function mkdir(string $path): bool {
+        public function mkdir(string $path): bool {
         $parentPath = dirname($path);
         if ($parentPath === '.') $parentPath = '';
         $parentId = $this->getFileIdByPath($parentPath);
@@ -410,6 +428,7 @@ class GoogleDrive extends Common {
         $res = $this->apiRequest('/files/' . $id, 'DELETE');
         $this->clearCacheForFolder(dirname($path));
         unset($this->idCache[$path]);
+        // DELETE responds with empty body but HTTP 204. apiRequest returns empty string or array on success.
         return true; 
     }
     
