@@ -86,6 +86,7 @@ class GoogleDrive extends Common {
     private $driveApiUrl = 'https://www.googleapis.com/drive/v3';
     private $idCache = [];
     private $statCache = [];
+    private $rootFolder;
 
     public function __construct($arguments) {
         parent::__construct($arguments);
@@ -106,6 +107,7 @@ class GoogleDrive extends Common {
         } else {
             $this->token = [];
         }
+        $this->rootFolder = trim($arguments['root_folder'] ?? '');
     }
 
     public function getId(): string { 
@@ -184,12 +186,26 @@ class GoogleDrive extends Common {
 
     private function getFileIdByPath(string $path) {
         $path = trim($path, '/');
-        if (empty($path) || $path === '.') return 'root';
+        
+        $parentId = 'root';
+        $currentPath = '';
+
+        if (!empty($this->rootFolder)) {
+            $rootFolderId = $this->idCache[':rootFolder'] ?? null;
+            if (!$rootFolderId) {
+                $query = "'root' in parents and name = '" . str_replace("'", "\\'", $this->rootFolder) . "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+                $res = $this->apiRequest('/files', 'GET', ['q' => $query, 'fields' => 'files(id)']);
+                if (empty($res['files'])) return false;
+                $rootFolderId = $res['files'][0]['id'];
+                $this->idCache[':rootFolder'] = $rootFolderId;
+            }
+            $parentId = $rootFolderId;
+        }
+
+        if (empty($path) || $path === '.') return $parentId;
         if (isset($this->idCache[$path])) return $this->idCache[$path];
 
         $parts = explode('/', $path);
-        $parentId = 'root';
-        $currentPath = '';
 
         foreach ($parts as $part) {
             $currentPath = empty($currentPath) ? $part : $currentPath . '/' . $part;
