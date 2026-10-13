@@ -14,7 +14,7 @@ class Google extends Backend {
                  (new DefinitionParameter('client_id', 'Client ID'))->setType(DefinitionParameter::VALUE_TEXT),
                  (new DefinitionParameter('client_secret', 'Client Secret'))->setType(DefinitionParameter::VALUE_PASSWORD),
                  (new DefinitionParameter('token', 'Token'))->setType(DefinitionParameter::VALUE_PASSWORD)->setFlag(DefinitionParameter::FLAG_OPTIONAL),
-                 (new DefinitionParameter('root_folder', 'Root Folder (Optional, e.g. NextCloud)'))->setType(DefinitionParameter::VALUE_TEXT)->setFlag(DefinitionParameter::FLAG_OPTIONAL)
+                 (new DefinitionParameter('root_folder', 'Root Folder (Optional, e.g. NextCloud or NextCloud/Volume_1)'))->setType(DefinitionParameter::VALUE_TEXT)->setFlag(DefinitionParameter::FLAG_OPTIONAL)
              ])
              ->addAuthScheme(AuthMechanism::SCHEME_NULL);
     }
