@@ -1,25 +1,34 @@
 document.addEventListener('DOMContentLoaded', function() {
     const observer = new MutationObserver(function() {
-        if (document.getElementById('gdrive-oauth-btn')) return;
+        const allInputs = Array.from(document.querySelectorAll('input'));
 
-        const inputs = Array.from(document.querySelectorAll('input'));
-        let clientIdInput = null;
-        let clientSecretInput = null;
-        let tokenInput = null;
-
-        inputs.forEach(input => {
-            const text = (input.placeholder || '') + (input.parentElement ? input.parentElement.innerText : '');
+        const tokenInputs = allInputs.filter(input => {
             const param = input.dataset.parameter || input.getAttribute('data-parameter') || '';
-            if (text.includes('Client ID') || text.includes('ID de cliente') || param.includes('client_id')) clientIdInput = input;
-            if (text.includes('Client Secret') || text.includes('Secreto de cliente') || param.includes('client_secret')) clientSecretInput = input;
-            if (text.includes('Token') || param.includes('token')) tokenInput = input;
+            const text = (input.placeholder || '') + (input.parentElement ? input.parentElement.innerText : '');
+            return param.includes('token') || text.includes('Token');
         });
 
-        if (clientIdInput && clientSecretInput && tokenInput) {
+        tokenInputs.forEach(tokenInput => {
+            const container = tokenInput.closest('tr') || tokenInput.closest('.external-storage-mount') || tokenInput.parentElement;
+            if (!container) return;
+            if (container.querySelector('.gdrive-oauth-btn')) return;
+
+            const rowInputs = Array.from(container.querySelectorAll('input'));
+            let clientIdInput = null;
+            let clientSecretInput = null;
+
+            rowInputs.forEach(input => {
+                const text = (input.placeholder || '') + (input.parentElement ? input.parentElement.innerText : '');
+                const param = input.dataset.parameter || input.getAttribute('data-parameter') || '';
+                if (text.includes('Client ID') || text.includes('ID de cliente') || param.includes('client_id')) clientIdInput = input;
+                if (text.includes('Client Secret') || text.includes('Secreto de cliente') || param.includes('client_secret')) clientSecretInput = input;
+            });
+
+            if (!clientIdInput || !clientSecretInput) return;
+
             const btn = document.createElement('button');
-            btn.id = 'gdrive-oauth-btn';
+            btn.className = 'button primary gdrive-oauth-btn';
             btn.textContent = t('files_external_gdrive_v2', '🔑 Connect with Google & Get Token');
-            btn.className = 'button primary';
             btn.style.marginTop = '15px';
             btn.style.width = '100%';
             btn.style.padding = '10px';
@@ -119,7 +128,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             tokenInput.parentElement.appendChild(btn);
-        }
+        });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 });
