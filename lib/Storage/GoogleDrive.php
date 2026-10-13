@@ -107,11 +107,12 @@ class GoogleDrive extends Common {
         } else {
             $this->token = [];
         }
-        $this->rootFolder = trim($arguments['root_folder'] ?? '');
+        $this->rootFolder = trim($arguments['root_folder'] ?? '', "/ \t\n\r\0\x0B");
     }
 
     public function getId(): string { 
-        return 'gdrive::' . md5($this->clientId . $this->token['access_token'] ?? '');
+        $base = 'gdrive::' . md5($this->clientId . ($this->token['access_token'] ?? ''));
+        return !empty($this->rootFolder) ? $base . ':' . md5($this->rootFolder) : $base;
     }
 
     public function test(bool $isPersonal = false): bool {
@@ -193,10 +194,19 @@ class GoogleDrive extends Common {
         if (!empty($this->rootFolder)) {
             $rootFolderId = $this->idCache[':rootFolder'] ?? null;
             if (!$rootFolderId) {
-                $query = "'root' in parents and name = '" . str_replace("'", "\\'", $this->rootFolder) . "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
-                $res = $this->apiRequest('/files', 'GET', ['q' => $query, 'fields' => 'files(id)']);
-                if (empty($res['files'])) return false;
-                $rootFolderId = $res['files'][0]['id'];
+                $rootParts = array_values(array_filter(explode('/', $this->rootFolder), 'strlen'));
+                $currParent = 'root';
+                foreach ($rootParts as $rootPart) {
+                    $query = "'{$currParent}' in parents and name = '" . str_replace("'", "\\'", $rootPart) . "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+                    $res = $this->apiRequest('/files', 'GET', ['q' => $query, 'fields' => 'files(id)']);
+                    if (empty($res['files'])) {
+                        $currParent = false;
+                        break;
+                    }
+                    $currParent = $res['files'][0]['id'];
+                }
+                if (!$currParent) return false;
+                $rootFolderId = $currParent;
                 $this->idCache[':rootFolder'] = $rootFolderId;
             }
             $parentId = $rootFolderId;
@@ -287,7 +297,7 @@ class GoogleDrive extends Common {
         return DirWrapper::wrap($names);
     }
     
-        public function uploadFile(string $path, string $data) {
+    public function uploadFile(string $path, string $data) {
         $parentPath = dirname($path);
         if ($parentPath === '.') $parentPath = '';
         $parentId = $this->getFileIdByPath($parentPath);
@@ -343,7 +353,6 @@ class GoogleDrive extends Common {
 
     private function clearCacheForFolder($path) {
         unset($this->idCache[$path]);
-        // Also clear children list cache if implemented
     }
 
     public function filetype(string $path) { $stat = $this->stat($path); return $stat ? $stat['type'] : false; }
@@ -356,7 +365,7 @@ class GoogleDrive extends Common {
     public function isDeletable(string $path): bool { return true; }
     public function isSharable(string $path): bool { return true; }
     
-                public function fopen(string $path, string $mode) {
+    public function fopen(string $path, string $mode) {
         $id = $this->getFileIdByPath($path);
         
         if (strpos($mode, 'r') !== false && $id) {
@@ -415,7 +424,7 @@ class GoogleDrive extends Common {
         return false;
     }
     
-        public function mkdir(string $path): bool {
+    public function mkdir(string $path): bool {
         $parentPath = dirname($path);
         if ($parentPath === '.') $parentPath = '';
         $parentId = $this->getFileIdByPath($parentPath);
@@ -444,7 +453,6 @@ class GoogleDrive extends Common {
         $res = $this->apiRequest('/files/' . $id, 'DELETE');
         $this->clearCacheForFolder(dirname($path));
         unset($this->idCache[$path]);
-        // DELETE responds with empty body but HTTP 204. apiRequest returns empty string or array on success.
         return true; 
     }
     
